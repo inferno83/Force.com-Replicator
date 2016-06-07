@@ -54,7 +54,7 @@ class StorageDB implements StorageInterface {
 
 	public function rollbackTransaction() {
 		$this->transactionDepth = 0;
-		$dbConnect->rollback();
+		$this->db->rollback();
 	}
 
 	public function tableExists($table) {
@@ -68,8 +68,9 @@ class StorageDB implements StorageInterface {
 		$result = $this->db->query("SHOW COLUMNS FROM $table");
 		$fields = array();
 
-		foreach($result as $row)
-			$fields[$row['Field']] = $row['Type']; 
+		foreach ($result as $row) {
+			$fields[$row['Field']] = $row['Type'];
+		}
 		
 		return $fields;
 		
@@ -159,7 +160,11 @@ class StorageDB implements StorageInterface {
 					" ON DUPLICATE KEY UPDATE {$fieldUpdates}"
 				);
 			} catch(Exception $e) {
-				file_put_contents('debug.txt', "INSERT INTO {$table} {$fieldNames} VALUES" . implode(',', $chunk) . " ON DUPLICATE KEY UPDATE {$fieldUpdates}");
+				file_put_contents(
+					'debug.txt',
+					"INSERT INTO {$table} {$fieldNames} VALUES" .
+					implode(',', $chunk) . " ON DUPLICATE KEY UPDATE {$fieldUpdates}"
+				);
 				throw $e;
 			}
 
@@ -191,7 +196,7 @@ class StorageDB implements StorageInterface {
 			// upsertValues batchInsertSize records at a time
 
 			$values = array();
-			foreach($chunk as $record) {
+			foreach ($chunk as $record) {
 				$recordValues = array_map(function($value) {return "'{$value}'";}, $record);
 				$values[] = '(' . implode(',', $recordValues) . ')';
 			}

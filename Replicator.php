@@ -25,7 +25,7 @@ class Replicator {
 	function __construct() {
 
 		$this->loadConfig();
-		
+
 		// initialise Salesforce and database interfaces
 		if(!empty($this->config['salesforce']['pass']))
 			$pass = $this->config['salesforce']['pass'];
@@ -302,11 +302,14 @@ class Replicator {
 						return 'DATE';
 					case 'datetime':
 						return 'DATETIME';
+					case 'url':
+						return 'TEXT';
+					case 'percent':
 					case 'double':
 					case 'currency':
 						return 'DECIMAL(' . $field->precision . ',' . $field->scale . ')';
 					default:
-						throw new Exception("unsupported field type ({$field->type})");
+						throw new Exception("unsupported field type ({$field->type}) for field named: {$field->name}");
 				}
 			default:
 				throw new Exception("unsupported database type ($databaseType)");
