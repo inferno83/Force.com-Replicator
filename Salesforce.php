@@ -8,7 +8,7 @@
  * Provides an interface to gather data from the Force.com platform.
  */
 
-require_once('soapclient/SforcePartnerClient.php');
+require_once('soapclient/SforceEnterpriseClient.php');
 require_once('soapclient/SforceHeaderOptions.php');
 require_once('bulkclient/BulkApiClient.php');
 
@@ -20,7 +20,7 @@ class Salesforce {
 	private $pass;
 	private $endpoint;
 
-	const WSDL = 'soapclient/partner.wsdl.xml';
+	const WSDL = 'soapclient/enterprise.wsdl.xml';
 
 	function __construct($user, $pass=null) {
 
@@ -135,7 +135,7 @@ class Salesforce {
 
 		do {
 			try {
-				$this->sfdc = new SforcePartnerClient();
+				$this->sfdc = new SforceEnterpriseClient();
 				$this->sfdc->createConnection($this::WSDL);
 				if($this->endpoint != null)
 					$this->sfdc->setEndpoint($this->endpoint);

@@ -23,8 +23,10 @@ class Replicator {
 	const CONFIG_FILE = 'config.json';
 
 	function __construct() {
-
-		$this->loadConfig();
+    // Load config.json first.
+    $this->loadConfig();
+    // console parameters will overwrite the configuration.
+    $this->loadOptions();
 
 		// initialise Salesforce and database interfaces
 		if(!empty($this->config['salesforce']['pass']))
@@ -361,6 +363,55 @@ class Replicator {
 	private function convertDecimal($value) {
 		return $value === '' ? 'NULL' : $value;
 	}
+
+  private function loadOptions() {
+      $dbOptions = getopt('', [
+          'dbuser:',
+          'dbpass:',
+          'dbhost:',
+          'database:',
+      ]);
+      
+      $sfOptions = getopt('', [
+          'sf_user:', //salesforce user
+          'sf_pass:', // salesforce pass.
+          'sf_endpoint:' //salesforce endpoint.
+      ]);
+
+      if (empty($dbOptions)) {
+          return false;
+      }
+
+      if (isset($dbOptions['dbuser']) || isset($dbOptions['dbpass']) || isset($dbOptions['dbhost']) || isset($dbOptions['database'])) {
+          $optionsNotUsed = array_diff(['dbuser', 'dbpass', 'dbhost', 'database'], array_keys($dbOptions));
+          if (!empty($optionsNotUsed)) {
+              throw new Exception("Options ".implode(', ', $optionsNotUsed)." are missing.");
+          }
+          $this->config['database'] = [
+              'type' => 'mysql',
+              'user' => $dbOptions['dbuser'],
+              'pass' => $dbOptions['dbpass'],
+              'database' => $dbOptions['database'],
+              'host' => $dbOptions['dbhost']
+          ];
+      }
+
+
+      if (isset($sfOptions['sf_user']) || isset($sfOptions['sf_pass']) || isset($sfOptions['sf_endpoint'])) {
+          $optionsNotUsed = array_diff(['sf_user', 'sf_pass'/* , 'sf_endpoint' */], array_keys($sfOptions));
+          if (!empty($optionsNotUsed)) {
+              throw new Exception("Options ".implode(', ', $optionsNotUsed)." are missing");
+          }
+          $this->config['salesforce'] = [
+              'user' => $sfOptions['sf_user'],
+              'pass' => $sfOptions['sf_pass'],
+              'enpoint' => isset($sfOptions['sf_endpoint']) ? $sfOptions['sf_endpoint'] : "https://login.salesforce.com/services/Soap/c/36.0/0DFC00000000oCr"
+          ];
+      }
+      var_dump($this->config);die;
+
+      return true;
+  }
 }
 
 if(!count(debug_backtrace())) { // only run if being called directly
