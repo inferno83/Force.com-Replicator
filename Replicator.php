@@ -13,21 +13,19 @@ require_once('StorageDB.php');
 
 class Replicator {
 
-	private $sf = null;             // Salesforce interface
-	private $db = null;             // database interface
-	private $config = null;         // the config file in memory
-	private $schemaSynced = false;  // has the schema been synced
-	private $fieldTypes = null;     // keep track of field types
-	private $fieldsToQuery = null;
+	protected $sf = null;             // Salesforce interface
+	protected $db = null;             // database interface
+	protected $config = null;         // the config file in memory
+	protected $schemaSynced = false;  // has the schema been synced
+	protected $fieldTypes = null;     // keep track of field types
+	protected $fieldsToQuery = null;
 
 	const CONFIG_FILE = 'config.json';
 
 	function __construct() {
-    // Load config.json first.
-    $this->loadConfig();
-    // console parameters will overwrite the configuration.
-    $this->loadOptions();
 
+		$this->loadConfig();
+		
 		// initialise Salesforce and database interfaces
 		if(!empty($this->config['salesforce']['pass']))
 			$pass = $this->config['salesforce']['pass'];
@@ -259,7 +257,7 @@ class Replicator {
 		$this->schemaSynced = true;
 	}
 
-	private function loadConfig() {
+	protected function loadConfig() {
 		$configContents = file_get_contents($this::CONFIG_FILE);
 		if($configContents === false)
 			throw new Exception("error reading config file: " . $this::CONFIG_FILE);
@@ -268,19 +266,18 @@ class Replicator {
 		if($this->config === null)
 			throw new Exception("error parsing config file: " . $this::CONFIG_FILE);
 
-		// validate salesforce config
-		if(empty($this->config['salesforce']) || empty($this->config['salesforce']['user']))
-			throw new Exception($this::CONFIG_FILE . ' is missing required Salesforce parameters');
+        // validate salesforce config
+        if(empty($this->config['salesforce']) || empty($this->config['salesforce']['user']))
+            throw new Exception($this::CONFIG_FILE . ' is missing required Salesforce parameters');
 
-		// validate database config
-		$db = $this->config['database'];
-		if(empty($db) || empty($db['type']) || empty($db['host']) || 
-		   empty($db['user']) || !isset($db['pass']) || empty($db['database']))
-			throw new Exception($this::CONFIG_FILE . ' is missing required database parameters');
-
+        // validate database config
+        $db = $this->config['database'];
+        if(empty($db) || empty($db['type']) || empty($db['host']) ||
+            empty($db['user']) || !isset($db['pass']) || empty($db['database']))
+            throw new Exception($this::CONFIG_FILE . ' is missing required database parameters');
 	}
 
-	private function createFieldDefinition($field) {
+	protected function createFieldDefinition($field) {
 
 		$databaseType = $this->config['database']['type'];
 		switch($databaseType) {
@@ -304,21 +301,18 @@ class Replicator {
 						return 'DATE';
 					case 'datetime':
 						return 'DATETIME';
-					case 'url':
-						return 'TEXT';
-					case 'percent':
 					case 'double':
 					case 'currency':
 						return 'DECIMAL(' . $field->precision . ',' . $field->scale . ')';
 					default:
-						throw new Exception("unsupported field type ({$field->type}) for field named: {$field->name}");
+						throw new Exception("unsupported field type ({$field->type})");
 				}
 			default:
 				throw new Exception("unsupported database type ($databaseType)");
 		}
 	}
 
-	private function getConvertFunction($fieldType) {
+	protected function getConvertFunction($fieldType) {
 
 		if($pos = strrpos($fieldType,'('))
 			$fieldType = substr($fieldType, 0, $pos);
@@ -335,7 +329,7 @@ class Replicator {
 		}
 	}
 
-	private function isEscapeRequired($fieldType) {
+	protected function isEscapeRequired($fieldType) {
 
 		if($pos = strrpos($fieldType,'('))
 			$fieldType = substr($fieldType, 0, $pos);
@@ -349,69 +343,20 @@ class Replicator {
 		}
 	}	
 
-	private function convertBoolean($value) {
+	protected function convertBoolean($value) {
 		if($value == 'true')
 			return 1;
 		else
 			return 0;
 	}
 
-	private function convertDatetime($value) {
+	protected function convertDatetime($value) {
 		return empty($value) ? 'NULL' : date("Y-m-d H:i:s", strtotime($value));
 	}
 
-	private function convertDecimal($value) {
+	protected function convertDecimal($value) {
 		return $value === '' ? 'NULL' : $value;
 	}
-
-  private function loadOptions() {
-      $dbOptions = getopt('', [
-          'dbuser:',
-          'dbpass:',
-          'dbhost:',
-          'database:',
-      ]);
-      
-      $sfOptions = getopt('', [
-          'sf_user:', //salesforce user
-          'sf_pass:', // salesforce pass.
-          'sf_endpoint:' //salesforce endpoint.
-      ]);
-
-      if (empty($dbOptions)) {
-          return false;
-      }
-
-      if (isset($dbOptions['dbuser']) || isset($dbOptions['dbpass']) || isset($dbOptions['dbhost']) || isset($dbOptions['database'])) {
-          $optionsNotUsed = array_diff(['dbuser', 'dbpass', 'dbhost', 'database'], array_keys($dbOptions));
-          if (!empty($optionsNotUsed)) {
-              throw new Exception("Options ".implode(', ', $optionsNotUsed)." are missing.");
-          }
-          $this->config['database'] = [
-              'type' => 'mysql',
-              'user' => $dbOptions['dbuser'],
-              'pass' => $dbOptions['dbpass'],
-              'database' => $dbOptions['database'],
-              'host' => $dbOptions['dbhost']
-          ];
-      }
-
-
-      if (isset($sfOptions['sf_user']) || isset($sfOptions['sf_pass']) || isset($sfOptions['sf_endpoint'])) {
-          $optionsNotUsed = array_diff(['sf_user', 'sf_pass'/* , 'sf_endpoint' */], array_keys($sfOptions));
-          if (!empty($optionsNotUsed)) {
-              throw new Exception("Options ".implode(', ', $optionsNotUsed)." are missing");
-          }
-          $this->config['salesforce'] = [
-              'user' => $sfOptions['sf_user'],
-              'pass' => $sfOptions['sf_pass'],
-              'enpoint' => isset($sfOptions['sf_endpoint']) ? $sfOptions['sf_endpoint'] : "https://login.salesforce.com/services/Soap/c/36.0/0DFC00000000oCr"
-          ];
-      }
-      var_dump($this->config);die;
-
-      return true;
-  }
 }
 
 if(!count(debug_backtrace())) { // only run if being called directly

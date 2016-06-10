@@ -8,7 +8,7 @@
  * Provides an interface to gather data from the Force.com platform.
  */
 
-require_once('soapclient/SforceEnterpriseClient.php');
+require_once('soapclient/SforcePartnerClient.php');
 require_once('soapclient/SforceHeaderOptions.php');
 require_once('bulkclient/BulkApiClient.php');
 
@@ -16,11 +16,11 @@ class Salesforce {
 	
 	public $sfdc;
 	public $session;
-	private $user;
-	private $pass;
-	private $endpoint;
+	protected $user;
+	protected $pass;
+	protected $endpoint;
 
-	const WSDL = 'soapclient/enterprise.wsdl.xml';
+	const WSDL = 'soapclient/partner.wsdl.xml';
 
 	function __construct($user, $pass=null) {
 
@@ -42,7 +42,6 @@ class Salesforce {
 			$objectNames = array($objectNames);
 
 		try {
-
 			if($this->sfdc === null)
 				$this->login();
 
@@ -128,14 +127,14 @@ class Salesforce {
 		}
 	}
 
-	private function login() {
+	protected function login() {
 
 		$this->session = null;
 		$interactive = $this->pass === null;
 
 		do {
 			try {
-				$this->sfdc = new SforceEnterpriseClient();
+				$this->sfdc = new SforcePartnerClient();
 				$this->sfdc->createConnection($this::WSDL);
 				if($this->endpoint != null)
 					$this->sfdc->setEndpoint($this->endpoint);
@@ -154,14 +153,14 @@ class Salesforce {
 
 	}
 
-	private function initSession() {
+	protected function initSession() {
 
 		if($this->session === null)
 			$this->login();
 
 	}	
 
-	private static function prompt($prompt = "Enter Password:") {
+	protected static function prompt($prompt = "Enter Password:") {
 		// read password from CLI
 
 		if (preg_match('/^win/i', PHP_OS)) {     // windows
