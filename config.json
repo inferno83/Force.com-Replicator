@@ -1,8 +1,15 @@
 {
   "objects": {
-    "Account": {
+    "Lead": {
       "fields": [
-        "Name"
+        "Salutation",
+        "FirstName",
+        "LastName",
+        "Email",
+        "HasOptedOutOfEmail",
+        "Phone",
+        "LeadSource",
+        "CreatedDate"
       ]
     }
   },
