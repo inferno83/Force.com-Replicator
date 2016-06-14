@@ -60,6 +60,11 @@ class ReplicatorV2 extends Replicator {
             $this->config['database']['database']
         );
 
+        if($this->cliOptions['force_load'] === true && empty($this->cliOptions['object'])) {
+            $this->db->query("DROP DATABASE " . $this->config['database']['database']);
+            $this->db->query("CREATE DATABASE " . $this->config['database']['database']);
+        }
+
         // convert all fields and object names to lowercase and add default fields
         $this->config['objects'] = array_change_key_case($this->config['objects'], CASE_LOWER);
         foreach($this->config['objects'] as $objectName => $object) {
