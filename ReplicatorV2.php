@@ -131,7 +131,8 @@ class ReplicatorV2 extends Replicator {
     private function getOptionalOptions()
     {
         return array(
-            'sf_wsdl'
+            'sf_wsdl',
+            'force_load'
         );
     }
 
