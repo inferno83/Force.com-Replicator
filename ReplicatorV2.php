@@ -8,6 +8,7 @@
 require_once('Replicator.php');
 require_once('SalesforceV2.php');
 require_once('SFObject.php');
+require_once('StorageDBV2.php');
 
 class ReplicatorV2 extends Replicator {
     protected $cliOptions;
@@ -55,12 +56,25 @@ class ReplicatorV2 extends Replicator {
             $this->sf->setEndpoint($this->config['salesforce']['endpoint']);
 
         //var_dump($this->sf);exit();
-        $this->db = new StorageDB(
+        $this->db = new StorageDBV2(
             $this->config['database']['host'],
             $this->config['database']['user'],
             $this->config['database']['pass'],
             $this->config['database']['database']
         );
+
+        if($this->cliOptions['force_load'] === "1") {
+            if (empty($this->cliOptions['object']))
+            {
+                $this->db->wipeHistoryTable();
+            }
+            elseif (!empty($this->cliOptions['object']))
+            {
+                foreach ($this->objectsAndFields as $object) {
+                    $this->db->removeFromHistoryTable($object->getTableName());
+                }
+            }
+        }
 
         // convert all fields and object names to lowercase and add default fields
         if (!isset($this->cliOptions['object']))
@@ -200,6 +214,7 @@ class ReplicatorV2 extends Replicator {
     private function getOptionalOptions()
     {
         return array(
+            'force_load',
             'object'
         );
     }

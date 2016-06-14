@@ -13,8 +13,8 @@ require_once 'StorageInterface.php';
 class StorageDB implements StorageInterface {
 
 	public $batchInsertSize;
-	private $db;
-	private $transactionDepth;
+	protected $db;
+	protected $transactionDepth;
 
 	const SYNC_HISTORY_TABLE = '_sync_history';
 
@@ -212,13 +212,13 @@ class StorageDB implements StorageInterface {
 
 	}
 
-	private function isInitialised() {
+	protected function isInitialised() {
 
 		return $this->tableExists($this::SYNC_HISTORY_TABLE);
 
 	}
 
-	private function initialise() {
+	protected function initialise() {
 
 		$this->db->query('DROP TABLE IF EXISTS ' . $this::SYNC_HISTORY_TABLE);
 
