@@ -53,6 +53,7 @@ class ReplicatorV2 extends Replicator {
         if(!empty($this->config['salesforce']['endpoint']))
             $this->sf->setEndpoint($this->config['salesforce']['endpoint']);
 
+        //var_dump($this->sf);exit();
         $this->db = new StorageDB(
             $this->config['database']['host'],
             $this->config['database']['user'],
@@ -61,11 +62,14 @@ class ReplicatorV2 extends Replicator {
         );
 
         // convert all fields and object names to lowercase and add default fields
-        $this->config['objects'] = array_change_key_case($this->config['objects'], CASE_LOWER);
-        foreach($this->config['objects'] as $objectName => $object) {
-            $this->config['objects'][$objectName]['fields'] = array_map('strtolower', $object['fields']);
-            array_unshift($this->config['objects'][$objectName]['fields'], 'lastmodifieddate');
-            array_unshift($this->config['objects'][$objectName]['fields'], 'id');
+        if (!isset($this->cliOptions['object']))
+        {
+            $this->config['objects'] = array_change_key_case($this->config['objects'], CASE_LOWER);
+            foreach($this->config['objects'] as $objectName => $object) {
+                $this->config['objects'][$objectName]['fields'] = array_map('strtolower', $object['fields']);
+                array_unshift($this->config['objects'][$objectName]['fields'], 'lastmodifieddate');
+                array_unshift($this->config['objects'][$objectName]['fields'], 'id');
+            }
         }
 
         //return parent::__construct();
@@ -108,22 +112,27 @@ class ReplicatorV2 extends Replicator {
                 $fieldArray = explode(",", $fieldString);
                 $fieldName = '';
                 $fieldTableName = '';
+
+                $fieldArray[] = 'id:id';
+                $fieldArray[] = 'lastmodifieddate:lastmodifieddate';
+
                 //var_dump($matches[1][0], $fieldArray);exit();
                 foreach ($fieldArray as $field) {
                     $fieldRenameArray = explode(":", $field);
-                    $fieldName = $fieldRenameArray[0];
+                    $fieldName = trim($fieldRenameArray[0]);
                     $fieldTableName = isset($fieldRenameArray[1]) ? trim($fieldRenameArray[1]) : $fieldName;
-                    $fields[] = new SFObjectFields($fieldName, $fieldTableName);
+                    $fields[strtolower($fieldName)] = new SFObjectFields($fieldName, $fieldTableName);
                 }
 
             }
             $nameArray = explode(':', $initialString);
             $sourceObject = trim($nameArray[0]);
             $targetTable = isset($nameArray[1]) ? trim($nameArray[1]) : $sourceObject;
-            $this->objectsAndFields[$sourceObject] = new SFObject($sourceObject, $targetTable, $fields);
+            $this->objectsAndFields[strtolower($sourceObject)] =
+                new SFObject($sourceObject, $targetTable, $fields, array('id', 'lastmodifieddate'));
         }
         // first
-        //print_r($this->objectsAndFields);
+        //print_r($this->objectsAndFields);exit();
     }
 
     /**
@@ -246,28 +255,44 @@ class ReplicatorV2 extends Replicator {
             $this->syncSchemaV2();
         }
 
+        //var_dump($this->fieldsToQuery);exit();
         // load field types into memory
         if($this->fieldTypes === null)
         {
             foreach (array_keys($this->fieldsToQuery) as $objectName) {
                 $object = $this->objectsAndFields[$objectName];
+                //var_dump($object->getTableName());exit();
                 $this->fieldTypes[$objectName] = $this->db->getFields($object->getTableName());
             }
         }
-
         // start syncing each object
         foreach($this->objectsAndFields as $objectName => $object) {
 
-            echo "Starting sync - $objectName".PHP_EOL;
+            $objectTable = $object->getTableName();
+            echo "Starting sync - $objectName for table: $objectTable".PHP_EOL;
 
             $thisSync = date("Y-m-d H:i:s");
             $previousSync = date("Y-m-d\TH:i:s\Z", strtotime($this->db->getMostRecentSync($object->getTableName())));
-            $tableFields = $object->fieldsSFTable();
+
+            $fieldsIndexedBySF = $object->getFieldsSFTable();
+            if (!sizeof($fieldsIndexedBySF)) // must be trying to query all
+            {
+                foreach ($this->fieldsToQuery[$objectName] as $field) {
+                    $fieldsIndexedBySF[$field] = $field;
+                }
+            }
+            /*if ($objectName == 'direct_deal__c')
+            {
+                var_dump($fieldsIndexedBySF);exit();
+            }*/
+            //var_dump($objectName, $this->fieldsToQuery[$objectName]);exit();
+            $fieldsIndexedByTable = array_flip($fieldsIndexedBySF);
 
             // open memory stream for storing csv
             $fh = fopen("php://memory", 'r+');
 
-            $result = $this->sf->batchQuery($objectName, $this->fieldsToQuery[$objectName], $previousSync, $fh);
+            $result = $this->sf->batchQuery($objectName, array_flip($this->fieldsToQuery[$objectName]), $previousSync, $fh);
+
             if($result === false) {
                 echo "No new or modified records found" . PHP_EOL;
                 continue;
@@ -275,12 +300,14 @@ class ReplicatorV2 extends Replicator {
 
             $header = fgetcsv($fh, 0, ',', '"', chr(0));
             $fieldCount = count($header);
-
+            //var_dump($header, $sfFields, $this->fieldTypes);exit();
             $fieldsToConvert = array();
             $fieldsToEscape = array();
             // decide which fields need to be treated before inserting into local db
+
             foreach ($header as $k => $field) {
-                $header[$k] = $field = strtolower($tableFields[$field]);
+                $header[$k] = $field = strtolower($fieldsIndexedBySF[strtolower($field)]);
+
                 $convertFunction = $this->getConvertFunction($this->fieldTypes[$objectName][$field]);
 
                 if($convertFunction != null)
@@ -289,6 +316,7 @@ class ReplicatorV2 extends Replicator {
                 if($this->isEscapeRequired($this->fieldTypes[$objectName][$field]))
                     $fieldsToEscape[] = $k;
             }
+
 
             echo "Begin converting and upserting data...".PHP_EOL;
 
@@ -317,26 +345,69 @@ class ReplicatorV2 extends Replicator {
                 $upsertCsv[] = implode(',', $data);
                 $rowCount++;
                 if($upsertBatchSize && $rowCount >= $upsertBatchSize) {
-                    $this->db->upsertCsvValues($object->getTableName(), $header, $upsertCsv, $upsertBatchSize);
+
+                    $this->db->upsertCsvValues($objectTable, $header, $upsertCsv, $upsertBatchSize);
                     $upsertCsv = array();
                     $rowCount = 0;
                 }
             }
 
             if($rowCount > 0)
-                $this->db->upsertCsvValues($objectName, $header, $upsertCsv, $upsertBatchSize);
+                $this->db->upsertCsvValues($objectTable, $header, $upsertCsv, $upsertBatchSize);
 
 
             $this->db->commitTransaction();
             fclose($fh);
 
-            echo "Finished sync - $objectName".PHP_EOL.PHP_EOL;
+            echo "Finished sync - $objectName for table $objectTable".PHP_EOL.PHP_EOL;
         }
 
         // revert to original timezone
         date_default_timezone_set($originalTz);
     }
 
+
+    /**
+     * @param $tableName
+     * @return array
+     */
+    protected function getExistingFields($tableName)
+    {
+        if ($this->db->tableExists($tableName))
+        {
+            return $this->db->getFields($tableName);
+        }
+        return array();
+    }
+
+    /**
+     * @param $fieldsIndexedBySf
+     * @param $existingFields
+     */
+    protected function getFieldsToQuery($fieldsIndexedBySf, $existingFields)
+    {
+
+        if(in_array('*', $fieldsIndexedBySf) || !sizeof($fieldsIndexedBySf)) {
+            // add all fields from Salesforce
+            return true;
+        }
+        elseif (is_array($existingFields)) {
+            // some fields already exist, check for new ones
+
+            $diff = array_diff($fieldsIndexedBySf, array_keys($existingFields));
+
+            /*if(count($diff) > 0)
+            {
+                $objectsToQuery[$objectName] = $diff;
+            }*/
+            //var_dump($diff);exit();
+            return count($diff) > 0 ? $diff : false;
+        } elseif (!is_array($existingFields)) {
+            // add all fields from config
+            return $fieldsIndexedBySf;
+        }
+        return false;
+    }
 
     /**
      * Convert Salesforce object definitions into database tables and create fields as defined by createFieldDefinition().
@@ -349,68 +420,31 @@ class ReplicatorV2 extends Replicator {
         $existingFields = array();
         $existingFieldsSF = array();
         $objectSource = array();
-        foreach($this->objectsAndFields as $object) {
+        foreach($this->objectsAndFields as $objectName => $object) {
 
             $objectTable = $object->getTableName();
-            $objectName = $object->getObjectName();
-            //$fieldsSFTable
             $objectSource[$objectName] = $object;
 
-            $tableFields = $object->getFieldsTableSF();
-            $sfFields = $object->getFieldsSFTable();
+            $fieldsIndexedBySF = $object->getFieldsSFTable();
+            $fieldsIndexedByTable = array_flip($fieldsIndexedBySF);
 
             // get existing fields
-            if($this->db->tableExists($objectTable))
+            $existingFields[$objectName] = $this->getExistingFields($objectTable);
+
+            // the below is true when there are no fields specified and therefore we use a *
+            if (sizeof($existingFields[$objectName]) && !sizeof($fieldsIndexedBySF))
             {
-                $existingFields[$objectName] = $this->db->getFields($objectTable);
-                $sfExistingFields = array();
-                foreach ($existingFields[$objectName] as $tableField) {
-                    $sfExistingFields[] = $sfFields[$tableField];
+
+                foreach ($existingFields[$objectName] as $field => $type) {
+                    $fieldsIndexedBySF[$field] = $field;
                 }
-                $existingFieldsSF[$objectName] = $sfExistingFields;
+                $fieldsIndexedByTable = array_flip($fieldsIndexedBySF);
             }
-            else
-            {
-                $existingFields[$objectName] = array();
-                $existingFieldsSF[$objectName] = array();
-            }
-
-
-            $fields = $sfFields;
 
             // this gets overwritten later for objects with *
-            $this->fieldsToQuery[$objectName] = $tableFields;
+            $this->fieldsToQuery[$objectName] = $fieldsIndexedBySF;
 
-            if(in_array('*', $fields)) {
-                // add all fields from Salesforce
-
-                $objectsToQuery[$objectName] = true;
-                $objectsToQuerySF[$objectName] = true;
-
-            }
-            elseif (is_array($existingFields[$objectName])) {
-                // some fields already exist, check for new ones
-
-                $diff = array_diff($tableFields, array_keys($existingFields[$objectName]));
-                if(count($diff) > 0)
-                {
-                    $objectsToQuery[$objectName] = $diff;
-                    $diffSF = array();
-                    foreach($diff as $value) {
-                        $diffSF[] = $sfFields[$value];
-                    }
-                    $objectsToQuerySF[$objectName] = $diffSF;
-                }
-
-            } else {
-                // add all fields from config
-
-                $objectsToQuery[$objectName] = $tableFields;
-                $objectsToQuerySF[$objectName] = $sfFields;
-
-
-            }
-
+            $objectsToQuery[$objectName] = $this->getFieldsToQuery($fieldsIndexedBySF, $existingFields[$objectName]);
         }
 
         if(count($objectsToQuery) > 0) {
@@ -427,72 +461,108 @@ class ReplicatorV2 extends Replicator {
             $describeBatches = array_chunk( array_keys($objectsToQuery), $describeBatchSize );
             $describeResult = array();
 
+            //var_dump($describeBatches, array_keys($objectsToQuery));exit();
+
             foreach( $describeBatches as $describeBatch ) {
                 // query SalesForce for each batch of tables
-
                 $describeBatchResult = $this->sf->getSObjectFields($describeBatch);
                 $describeResult = array_merge($describeResult, $describeBatchResult);
 
             }
 
             foreach ($describeResult as $objectName => $fields) {
-                $object = $objectSource[$objectName];
-                $tableFields = $object->getFieldsTableSF();
-                $sfFields = $object->getFieldsSFTable();
-
                 $objectName = strtolower($objectName);
-                $allFields = array_map(function($field) {return strtolower($field->name);}, $fields);
+                $object = $this->objectsAndFields[$objectName];
+
+                $fieldsIndexedBySF = $object->getFieldsSFTable();
+                $fieldsIndexedByTable = array_flip($fieldsIndexedBySF);
+
+                $allFieldsToRetrieve = array_map(function($field) {return strtolower($field->name);}, $fields);
+                $allFields = array();
+                foreach($allFieldsToRetrieve as $key => $value) {
+                    $allFields[$value] = $value;
+                }
+
+                $allFieldObjects = array();
+                foreach ($fields as $field) {
+                    $allFieldObjects[strtolower($field->name)] = $field;
+                }
+
                 $newFields = array();
 
-                if(is_array($objectsToQuery[$objectName])) {
+                if (is_array($objectsToQuery[$objectName])) {
                     // check if any fields defined in config don't exist in Salesforce
-
-                    $badFields = array_diff($objectsToQuerySF[$objectName], $allFields);
+                    $badFields = array_diff(array_flip($objectsToQuery[$objectName]), $allFields);
                     if(count($badFields) > 0)
                     {
                         throw new Exception("Invalid field(s): " . implode(', ', $badFields));
                     }
 
+
                     // get describe data for fields that need to be added
-                    foreach ($fields as $field) {
-                        if(in_array(strtolower($field->name), $objectsToQuerySF[$objectName]))
+                    foreach ($allFields as $field) {
+                        if (in_array($field, array_flip($objectsToQuery[$objectName])))
                         {
                             $newFields[] = $field;
                         }
                     }
-
                 }
                 elseif (array_key_exists($objectName, $objectsToQuery))
                 {
                     // add all fields from Salesforce
+                    //var_dump('here', $objectsToQuery[$objectName]);
+                    if ($objectsToQuery[$objectName])
+                    {
+                        $this->fieldsToQuery[$objectName] = $allFields;
 
-                    $this->fieldsToQuery[$objectName] = $allFields;
-
-                    foreach ($fields as $field) {
-                        if (!array_key_exists(strtolower($field->name), $existingFieldsSF[$objectName]))
+                        foreach ($allFields as $field) {
+                            if (isset($fieldsIndexedBySF[$field]))
+                            {
+                                $newFields[] = $field;
+                            }
+                        }
+                        //var_dump($objectName, $fieldsIndexedBySF);
+                        if (!is_array($objectsToQuery[$objectName]) && $objectsToQuery[$objectName] == true)
                         {
-                            $newFields[] = $field;
+                            $newFields = $allFields;
+                            foreach ($allFields as $field) {
+                                $fieldsIndexedBySF[$field] = $field;
+                            }
                         }
                     }
+
                 }
 
+                //var_dump($newFields);exit();
+                /*if ($objectName == 'directdeal__c')
+                {
+                    var_dump($newFields);exit();
+                }*/
                 // get mysql definition for each field
                 $fieldDefs = array();
                 foreach ($newFields as $field) {
-                    $objectUpserts[$objectName][$field->name] = $this->createFieldDefinition($field);
+                    $objectUpserts[$objectName][$fieldsIndexedBySF[$field]] = $this->createFieldDefinition($allFieldObjects[$field]);
                 }
-
             }
-
+            //var_dump($this->objectsAndFields);exit();
+            //var_dump($objectUpserts);exit();
             // update and create tables
             foreach ($objectUpserts as $objectName => $fieldDefs) {
-                $object = $objectSource[$objectName];
                 $this->db->upsertObject($object->getTableName(), $fieldDefs);
             }
 
         }
 
         $this->schemaSynced = true;
+    }
+
+    protected function arrayFlip($array = array())
+    {
+        $newArray = array();
+        foreach ($array as $key => $val) {
+            $newArray[$val] = $key;
+        }
+        return $newArray;
     }
 
 }
