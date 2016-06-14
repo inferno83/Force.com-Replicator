@@ -23,6 +23,7 @@ class ReplicatorV2 extends Replicator {
         {
             // load config the regular way
             $this->loadConfig();
+            return parent::__construct();
         }
         elseif (sizeof($this->cliOptions))
         {
@@ -199,7 +200,6 @@ class ReplicatorV2 extends Replicator {
     private function getOptionalOptions()
     {
         return array(
-            'sf_wsdl',
             'object'
         );
     }
@@ -421,7 +421,7 @@ class ReplicatorV2 extends Replicator {
         $existingFieldsSF = array();
         $objectSource = array();
         foreach($this->objectsAndFields as $objectName => $object) {
-
+            //var_dump($objectName);
             $objectTable = $object->getTableName();
             $objectSource[$objectName] = $object;
 
@@ -445,7 +445,10 @@ class ReplicatorV2 extends Replicator {
             $this->fieldsToQuery[$objectName] = $fieldsIndexedBySF;
 
             $objectsToQuery[$objectName] = $this->getFieldsToQuery($fieldsIndexedBySF, $existingFields[$objectName]);
+
+            //var_dump($objectName, $objectsToQuery[$objectName]);
         }
+
 
         if(count($objectsToQuery) > 0) {
 
@@ -473,22 +476,23 @@ class ReplicatorV2 extends Replicator {
             foreach ($describeResult as $objectName => $fields) {
                 $objectName = strtolower($objectName);
                 $object = $this->objectsAndFields[$objectName];
+                $newFields = array();
+                $allFields = array();
+                $allFieldObjects = array();
 
                 $fieldsIndexedBySF = $object->getFieldsSFTable();
                 $fieldsIndexedByTable = array_flip($fieldsIndexedBySF);
+                //var_dump($fieldsIndexedByTable);
 
                 $allFieldsToRetrieve = array_map(function($field) {return strtolower($field->name);}, $fields);
-                $allFields = array();
+
                 foreach($allFieldsToRetrieve as $key => $value) {
                     $allFields[$value] = $value;
                 }
 
-                $allFieldObjects = array();
                 foreach ($fields as $field) {
                     $allFieldObjects[strtolower($field->name)] = $field;
                 }
-
-                $newFields = array();
 
                 if (is_array($objectsToQuery[$objectName])) {
                     // check if any fields defined in config don't exist in Salesforce
@@ -501,11 +505,15 @@ class ReplicatorV2 extends Replicator {
 
                     // get describe data for fields that need to be added
                     foreach ($allFields as $field) {
+
                         if (in_array($field, array_flip($objectsToQuery[$objectName])))
                         {
                             $newFields[] = $field;
                         }
+
                     }
+
+                    //var_dump($field, $newFields, $fieldsIndexedBySF);
                 }
                 elseif (array_key_exists($objectName, $objectsToQuery))
                 {
@@ -533,21 +541,17 @@ class ReplicatorV2 extends Replicator {
 
                 }
 
-                //var_dump($newFields);exit();
-                /*if ($objectName == 'directdeal__c')
-                {
-                    var_dump($newFields);exit();
-                }*/
                 // get mysql definition for each field
                 $fieldDefs = array();
                 foreach ($newFields as $field) {
+                    //var_dump('*' . $fieldsIndexedBySF[$field] .'**'. $field);
+                    //var_dump($objectName, $field, $allFieldObjects[$field]);
                     $objectUpserts[$objectName][$fieldsIndexedBySF[$field]] = $this->createFieldDefinition($allFieldObjects[$field]);
                 }
             }
-            //var_dump($this->objectsAndFields);exit();
-            //var_dump($objectUpserts);exit();
             // update and create tables
             foreach ($objectUpserts as $objectName => $fieldDefs) {
+                $object = $this->objectsAndFields[$objectName];
                 $this->db->upsertObject($object->getTableName(), $fieldDefs);
             }
 
