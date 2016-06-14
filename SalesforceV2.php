@@ -74,4 +74,35 @@ class SalesforceV2 extends Salesforce {
         } while($interactive && $this->session === null);
 
     }
+
+
+    public function getSObjectFields($objectNames) {
+
+        if(!is_array($objectNames))
+            $objectNames = array($objectNames);
+
+        try {
+            if($this->sfdc === null || !$this->sfdc->getSessionId())
+            {
+                $this->login();
+            }
+
+            //var_dump($this->sfdc->describeSObjects(array('lead')));exit();
+            $result = $this->sfdc->describeSObjects($objectNames);
+
+            if(!is_array($result))
+                $result = array($result);
+
+            $sObjects = array();
+            foreach($result as $sObject)
+                $sObjects[$sObject->name] = $sObject->fields;
+
+            return $sObjects;
+        } catch (Exception $e) {
+            echo $this->sfdc->getLastRequest();
+            echo $e->faultstring;
+            die;
+        }
+
+    }
 }

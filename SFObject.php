@@ -12,10 +12,11 @@ class SFObject {
     protected $fieldsSFTable = array();
     protected $fieldsTableSF = array();
 
-    public function __construct($objectName, $tableName = null, $fields = array())
+    public function __construct($objectName, $tableName = null, $fields = array(), $defaultFields = array())
     {
-        $this->objectName = $objectName;
-        $this->tableName = $objectName ? $objectName : $tableName;
+        $this->objectName = strtolower($objectName);
+        //$this->tableName = $tableName ? strtolower($tableName) : $this->objectName;
+        $this->tableName = $tableName ? strtolower($tableName) : $this->objectName;
         $this->fields = $fields;
 
         foreach($fields as $field) {
@@ -32,6 +33,16 @@ class SFObject {
     public function getFieldsTableSF()
     {
         return $this->fieldsTableSF;
+    }
+
+    public function translateSFField($sfField)
+    {
+        return isset($this->fieldsSFTable[$sfField]) ? $this->fieldsSFTable[$sfField] : null;
+    }
+
+    public function translateTableField($tableField)
+    {
+        return isset($this->fieldsTableSF[$tableField]) ? $this->fieldsTableSF[$tableField] : null;
     }
 
     public function getObjectName()
@@ -56,8 +67,8 @@ class SFObjectFields {
 
     public function __construct($fieldName, $renamedField)
     {
-        $this->fieldName = $fieldName;
-        $this->renamedField = $renamedField ? $renamedField : $fieldName;
+        $this->fieldName = strtolower($fieldName);
+        $this->renamedField = $renamedField ? strtolower($renamedField) : strtolower($fieldName);
     }
 
     public function getFieldName()
