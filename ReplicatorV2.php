@@ -62,8 +62,7 @@ class ReplicatorV2 extends Replicator {
         );
 
         if($this->cliOptions['force_load'] === true && empty($this->cliOptions['object'])) {
-            $this->db->query("DROP DATABASE " . $this->config['database']['database']);
-            $this->db->query("CREATE DATABASE " . $this->config['database']['database']);
+            $this->db->query("TRUNCATE TABLE " . StorageDB::SYNC_HISTORY_TABLE);
         }
 
         // convert all fields and object names to lowercase and add default fields
