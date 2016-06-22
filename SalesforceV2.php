@@ -46,6 +46,9 @@ class SalesforceV2 extends Salesforce {
             }
         }
 
+
+
+
         //var_dump($this->user, $this->pass, get_class($this->sfdc), $this->wsdl_file, $this->wsdl_mode);exit();
 
     }
@@ -87,6 +90,17 @@ class SalesforceV2 extends Salesforce {
                 $this->login();
             }
 
+
+            /* this is how you find a deleted record */
+            /*
+            try{
+                $deletedResponse = $this->sfdc->getDeleted('Contact', strtotime('2016-06-22 00:00:00'), strtotime('2016-06-22 23:59:59'));
+                print_r($deletedResponse);
+                exit();
+            }catch (Exception $e) {
+                echo  $this->sfdc->getLastRequest();
+                print_r($e);
+            }*/
             //var_dump($this->sfdc->describeSObjects(array('lead')));exit();
             $result = $this->sfdc->describeSObjects($objectNames);
 
@@ -103,6 +117,78 @@ class SalesforceV2 extends Salesforce {
             echo $e->faultstring;
             die;
         }
+    }
 
+    /**
+     * @param $object
+     * @param $fields
+     * @param null $startDate
+     * @param null $fh
+     * @return bool
+     * @throws Exception
+     */
+    public function batchQuery($object, $fields, $startDate=null, $fh=null) {
+
+        $this->initSession();
+
+        $myBulkApiConnection = new BulkApiClient($this->session->serverUrl, $this->session->sessionId);
+        $myBulkApiConnection->setLoggingEnabled(false);
+        $myBulkApiConnection->setCompressionEnabled(true);
+
+        // create in-memory representation of the job
+        $job = new JobInfo();
+        $job->setObject($object);
+        $job->setOpertion('query');
+        $job->setContentType('CSV');
+        $job->setConcurrencyMode('Parallel');
+
+        $soql = "SELECT " . implode(',', $fields) . " FROM $object";
+        if($startDate != null)
+            $soql .= " WHERE LastModifiedDate >= $startDate";
+        //$soql .= " ALL ROWS";
+
+        echo 'Creating job...';
+        $job = $myBulkApiConnection->createJob($job);
+        echo 'ok'.PHP_EOL;
+
+        echo 'Creating batch...';
+        $batch = $myBulkApiConnection->createBatch($job, $soql);
+        echo 'ok'.PHP_EOL;
+
+        echo 'Closing job...';
+        $myBulkApiConnection->updateJobState($job->getId(), 'Closed');
+        echo 'ok'.PHP_EOL;
+
+        $sleepTime = 4;
+        echo 'Waiting for job to complete...';
+        while($batch->getState() == 'Queued' || $batch->getState() == 'InProgress') {
+            // poll Salesforce for the status of the batch
+            sleep($sleepTime *= 1.1);
+            echo ".";
+            $batch = $myBulkApiConnection->getBatchInfo($job->getId(), $batch->getId());
+        }
+        echo 'ok'.PHP_EOL;
+
+        // get status of batches
+        echo "Retrieving results...";
+        $resultList = $myBulkApiConnection->getBatchResultList($job->getId(), $batch->getId());
+
+        // retrieve queried data
+        foreach ($resultList as $resultId)
+            $myBulkApiConnection->getBatchResult($job->getId(), $batch->getId(), $resultId, $fh);
+
+        echo 'ok'.PHP_EOL;
+
+        if(isset($fh)) {
+
+            $preview = stream_get_contents($fh,32,0);
+            rewind($fh);
+
+            if(strcasecmp($preview, 'Records not found for this query') == 0 || trim($preview) == false)
+                // return false if no records returned
+                return false;
+            else
+                return true;
+        }
     }
 }

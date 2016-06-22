@@ -52,8 +52,10 @@ class ReplicatorV2 extends Replicator {
             !empty($this->cliOptions['sf_wsdl']) ? $this->cliOptions['sf_wsdl'] : null,
             !empty($this->cliOptions['sf_wsdl_mode']) ? $this->cliOptions['sf_wsdl_mode'] : null
         );
-        if(!empty($this->config['salesforce']['endpoint']))
+        if (!empty($this->config['salesforce']['endpoint']))
+        {
             $this->sf->setEndpoint($this->config['salesforce']['endpoint']);
+        }
 
         //var_dump($this->sf);exit();
         $this->db = new StorageDBV2(
