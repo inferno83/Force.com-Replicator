@@ -6,7 +6,6 @@ class StorageDBV2 extends StorageDB {
 	/**
 	 *
      */
-
     function __construct($host, $user, $pass, $database, $batchInsertSize=150000) {
 
         $this->db = new PDO("mysql:host=$host;dbname=$database", $user, $pass);
@@ -16,9 +15,12 @@ class StorageDBV2 extends StorageDB {
         $this->transactionDepth = 0;
 
         if(!$this->isInitialised())
+        {
             $this->initialise();
+        }
     }
     /**
+     * Default fields and types to sync up.
      * @return array
      */
     public function getSyncHistoryFields()
@@ -35,6 +37,7 @@ class StorageDBV2 extends StorageDB {
     }
 
     /**
+     * This returns true if the columns and the table exists, otherwise false.
      * @return bool
      */
     protected function isInitialised() {
@@ -63,7 +66,7 @@ class StorageDBV2 extends StorageDB {
     }
 
     /**
-     *
+     * Overriding the original initialize method to sync default columns.
      */
     protected function initialise() {
 
@@ -102,7 +105,7 @@ class StorageDBV2 extends StorageDB {
     }
 
     /**
-     *
+     * Wiping out the History Table.
      */
     public function wipeHistoryTable()
 	{
