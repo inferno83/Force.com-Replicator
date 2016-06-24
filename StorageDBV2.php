@@ -4,7 +4,7 @@ require_once 'StorageDB.php';
 
 class StorageDBV2 extends StorageDB {
 	/**
-	 *
+	 * 
      */
     function __construct($host, $user, $pass, $database, $batchInsertSize=150000) {
 
